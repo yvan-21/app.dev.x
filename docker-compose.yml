@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "yvan22"
+      MYSQL_DATABASE: "attendance_db"
+    volumes:
+      - ./database.sql:/docker-entrypoint-initdb.d/database.sql:ro
+    ports:
+      - "3306:3306"
+
+  app:
+    image: maven:3.9.5-eclipse-temurin-17
+    working_dir: /app
+    volumes:
+      - ./:/app:cached
+    command: mvn -DskipTests -Dexec.mainClass=com.attendance.WebApp exec:java
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: attendance_db
+      DB_USER: root
+      DB_PASSWORD: yvan22
+    depends_on:
+      - db
+    tty: true

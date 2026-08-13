@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Attendance (Python)</title>
+  <style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px}</style>
+</head>
+<body>
+  <h1>Attendance</h1>
+  <form id="form">
+    <input name="studentName" placeholder="Student Name" required />
+    <input name="studentId" placeholder="Student ID" required />
+    <input name="date" type="date" />
+    <input name="timeIn" type="time" />
+    <input name="timeOut" type="time" />
+    <select name="status"><option>Present</option><option>Late</option><option>Absent</option></select>
+    <button type="submit">Add</button>
+  </form>
+
+  <h2>Records</h2>
+  <table id="table"><thead><tr><th>ID</th><th>Name</th><th>Student ID</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table>
+
+  <script>
+    async function load(){
+      const res = await fetch('/api/attendances');
+      const list = await res.json();
+      const tbody = document.querySelector('#table tbody'); tbody.innerHTML = '';
+      list.forEach(r=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.id}</td><td>${r.student_name}</td><td>${r.student_id}</td><td>${r.attendance_date}</td><td>${r.time_in||''}</td><td>${r.time_out||''}</td><td>${r.status}</td><td><button data-id="${r.id}" class="del">Del</button></td>`;
+        tbody.appendChild(tr);
+      });
+      document.querySelectorAll('.del').forEach(b=>b.onclick=async e=>{const id=e.target.dataset.id; await fetch('/api/attendances/'+id,{method:'DELETE'}); load();});
+    }
+
+    document.getElementById('form').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const obj = Object.fromEntries(fd.entries());
+      if(!obj.date) obj.date = new Date().toISOString().slice(0,10);
+      await fetch('/api/attendances',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+      e.target.reset();
+      load();
+    });
+
+    load();
+  </script>
+</body>
+</html>
