@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Attendance CRUD</title>
+  <title>Attendance System</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 24px; background: #f6f8fb; color: #1f2937; }
     h1, h2 { margin-bottom: 12px; }
@@ -12,39 +12,97 @@
     button { cursor: pointer; background: #2563eb; color: white; border: none; }
     button.secondary { background: #4b5563; }
     button.danger { background: #dc2626; }
+    button.save-settings { background: #059669; }
     table { width: 100%; border-collapse: collapse; background: white; }
     th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; }
     th { background: #eef2ff; }
     .row-actions { display: flex; gap: 8px; }
     .hidden { display: none; }
+    .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .settings-section { padding: 12px; background: #f9fafb; border-radius: 8px; }
+    .settings-section h3 { margin: 0 0 12px 0; font-size: 14px; color: #374151; }
+    .time-input-pair { display: flex; gap: 8px; align-items: center; }
+    .time-input-pair label { font-size: 12px; color: #6b7280; width: 60px; }
+    .time-input-pair input { flex: 1; }
   </style>
 </head>
 <body>
   <div class="panel">
-    <h1>Attendance</h1>
+    <h1>Attendance System</h1>
+  </div>
+
+  <div class="panel">
+    <h2>Settings - Configure Time Windows</h2>
+    <div class="settings-grid">
+      <div class="settings-section">
+        <h3>Morning Login Window</h3>
+        <div class="time-input-pair">
+          <label>Start:</label>
+          <input type="time" id="morningLoginStart" />
+        </div>
+        <div class="time-input-pair">
+          <label>End:</label>
+          <input type="time" id="morningLoginEnd" />
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>Morning Logout Window</h3>
+        <div class="time-input-pair">
+          <label>Start:</label>
+          <input type="time" id="morningLogoutStart" />
+        </div>
+        <div class="time-input-pair">
+          <label>End:</label>
+          <input type="time" id="morningLogoutEnd" />
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>Afternoon Login Window</h3>
+        <div class="time-input-pair">
+          <label>Start:</label>
+          <input type="time" id="afternoonLoginStart" />
+        </div>
+        <div class="time-input-pair">
+          <label>End:</label>
+          <input type="time" id="afternoonLoginEnd" />
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3>Afternoon Logout Window</h3>
+        <div class="time-input-pair">
+          <label>Start:</label>
+          <input type="time" id="afternoonLogoutStart" />
+        </div>
+        <div class="time-input-pair">
+          <label>End:</label>
+          <input type="time" id="afternoonLogoutEnd" />
+        </div>
+      </div>
+    </div>
+    <button class="save-settings" id="saveSettingsBtn">Save Settings</button>
+  </div>
+
+  <div class="panel">
+    <h2>Record Attendance</h2>
     <form id="form">
       <input type="hidden" name="id" id="recordId" />
       <input name="studentName" id="studentName" placeholder="Student Name" required />
       <input name="studentId" id="studentId" placeholder="Student ID" required />
       <input name="date" id="date" type="date" required />
-      <input name="timeIn" id="timeIn" type="time" aria-label="Log In Time" title="Log In Time" />
-      <input name="timeOut" id="timeOut" type="time" aria-label="Log Out Time" title="Log Out Time" />
-      <input name="loginStart" id="loginStart" type="time" aria-label="Log In Window Start" title="Log In Window Start" placeholder="07:00" />
-      <input name="loginEnd" id="loginEnd" type="time" aria-label="Log In Window End" title="Log In Window End" placeholder="07:50" />
-      <input name="logoutStart" id="logoutStart" type="time" aria-label="Log Out Window Start" title="Log Out Window Start" placeholder="11:00" />
-      <input name="logoutEnd" id="logoutEnd" type="time" aria-label="Log Out Window End" title="Log Out Window End" placeholder="12:00" />
-      <select name="status" id="status">
-        <option>Present</option>
-        <option>Late</option>
-        <option>Absent</option>
-      </select>
+      
+      <input name="morningTimeIn" id="morningTimeIn" type="time" aria-label="Morning Log In" placeholder="Morning Log In" />
+      <input name="morningTimeOut" id="morningTimeOut" type="time" aria-label="Morning Log Out" placeholder="Morning Log Out" />
+      
+      <input name="afternoonTimeIn" id="afternoonTimeIn" type="time" aria-label="Afternoon Log In" placeholder="Afternoon Log In" />
+      <input name="afternoonTimeOut" id="afternoonTimeOut" type="time" aria-label="Afternoon Log Out" placeholder="Afternoon Log Out" />
+      
       <button id="submitBtn" type="submit">Create Record</button>
       <button id="cancelBtn" type="button" class="secondary hidden">Cancel</button>
     </form>
   </div>
 
   <div class="panel">
-    <h2>Saved Records</h2>
+    <h2>Attendance Records</h2>
     <table id="table">
       <thead>
         <tr>
@@ -52,9 +110,12 @@
           <th>Name</th>
           <th>Student ID</th>
           <th>Date</th>
-          <th>Log In</th>
-          <th>Log Out</th>
-          <th>Status</th>
+          <th>Morning In</th>
+          <th>Morning Out</th>
+          <th>Morning Status</th>
+          <th>Afternoon In</th>
+          <th>Afternoon Out</th>
+          <th>Afternoon Status</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -67,6 +128,39 @@
     const submitBtn = document.getElementById('submitBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const recordId = document.getElementById('recordId');
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+    async function loadSettings() {
+      const res = await fetch('/api/settings');
+      const settings = await res.json();
+      document.getElementById('morningLoginStart').value = settings.morning_login_start;
+      document.getElementById('morningLoginEnd').value = settings.morning_login_end;
+      document.getElementById('morningLogoutStart').value = settings.morning_logout_start;
+      document.getElementById('morningLogoutEnd').value = settings.morning_logout_end;
+      document.getElementById('afternoonLoginStart').value = settings.afternoon_login_start;
+      document.getElementById('afternoonLoginEnd').value = settings.afternoon_login_end;
+      document.getElementById('afternoonLogoutStart').value = settings.afternoon_logout_start;
+      document.getElementById('afternoonLogoutEnd').value = settings.afternoon_logout_end;
+    }
+
+    async function saveSettings() {
+      const settings = {
+        morning_login_start: document.getElementById('morningLoginStart').value,
+        morning_login_end: document.getElementById('morningLoginEnd').value,
+        morning_logout_start: document.getElementById('morningLogoutStart').value,
+        morning_logout_end: document.getElementById('morningLogoutEnd').value,
+        afternoon_login_start: document.getElementById('afternoonLoginStart').value,
+        afternoon_login_end: document.getElementById('afternoonLoginEnd').value,
+        afternoon_logout_start: document.getElementById('afternoonLogoutStart').value,
+        afternoon_logout_end: document.getElementById('afternoonLogoutEnd').value,
+      };
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      alert('Settings saved successfully!');
+    }
 
     async function loadRecords() {
       const res = await fetch('/api/attendances');
@@ -75,7 +169,7 @@
       tbody.innerHTML = '';
 
       if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="8">No records found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11">No records found.</td></tr>';
         return;
       }
 
@@ -86,9 +180,12 @@
           <td>${r.studentName}</td>
           <td>${r.studentId}</td>
           <td>${r.date}</td>
-          <td>${r.timeIn || '-'}</td>
-          <td>${r.timeOut || '-'}</td>
-          <td>${r.status}</td>
+          <td>${r.morningTimeIn || '-'}</td>
+          <td>${r.morningTimeOut || '-'}</td>
+          <td>${r.morningStatus}</td>
+          <td>${r.afternoonTimeIn || '-'}</td>
+          <td>${r.afternoonTimeOut || '-'}</td>
+          <td>${r.afternoonStatus}</td>
           <td>
             <div class="row-actions">
               <button type="button" class="secondary edit" data-id="${r.id}">Edit</button>
@@ -117,13 +214,10 @@
           document.getElementById('studentName').value = item.studentName || '';
           document.getElementById('studentId').value = item.studentId || '';
           document.getElementById('date').value = item.date || new Date().toISOString().slice(0, 10);
-          document.getElementById('timeIn').value = item.timeIn || '';
-          document.getElementById('timeOut').value = item.timeOut || '';
-          document.getElementById('loginStart').value = item.loginStart || '';
-          document.getElementById('loginEnd').value = item.loginEnd || '';
-          document.getElementById('logoutStart').value = item.logoutStart || '';
-          document.getElementById('logoutEnd').value = item.logoutEnd || '';
-          document.getElementById('status').value = item.status || 'Present';
+          document.getElementById('morningTimeIn').value = item.morningTimeIn || '';
+          document.getElementById('morningTimeOut').value = item.morningTimeOut || '';
+          document.getElementById('afternoonTimeIn').value = item.afternoonTimeIn || '';
+          document.getElementById('afternoonTimeOut').value = item.afternoonTimeOut || '';
           submitBtn.textContent = 'Update Record';
           cancelBtn.classList.remove('hidden');
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -145,13 +239,10 @@
         studentName: document.getElementById('studentName').value.trim(),
         studentId: document.getElementById('studentId').value.trim(),
         date: document.getElementById('date').value,
-        timeIn: document.getElementById('timeIn').value,
-        timeOut: document.getElementById('timeOut').value,
-        loginStart: document.getElementById('loginStart').value,
-        loginEnd: document.getElementById('loginEnd').value,
-        logoutStart: document.getElementById('logoutStart').value,
-        logoutEnd: document.getElementById('logoutEnd').value,
-        status: document.getElementById('status').value,
+        morningTimeIn: document.getElementById('morningTimeIn').value,
+        morningTimeOut: document.getElementById('morningTimeOut').value,
+        afternoonTimeIn: document.getElementById('afternoonTimeIn').value,
+        afternoonTimeOut: document.getElementById('afternoonTimeOut').value,
       };
 
       const method = recordId.value ? 'PUT' : 'POST';
@@ -168,7 +259,10 @@
     });
 
     cancelBtn.addEventListener('click', resetForm);
+    saveSettingsBtn.addEventListener('click', saveSettings);
+    
     document.getElementById('date').value = new Date().toISOString().slice(0, 10);
+    loadSettings();
     loadRecords();
   </script>
 </body>

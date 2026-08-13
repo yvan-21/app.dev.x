@@ -13,9 +13,14 @@ def parse_time(value):
         if not value:
             return None
         try:
-            return datetime.strptime(value, '%H:%M').time()
+            # Try HH:MM:SS format first (from MySQL TIME type)
+            return datetime.strptime(value, '%H:%M:%S').time()
         except ValueError:
-            return None
+            try:
+                # Fall back to HH:MM format (from form inputs)
+                return datetime.strptime(value, '%H:%M').time()
+            except ValueError:
+                return None
     return value
 
 
@@ -47,25 +52,77 @@ def determine_status(login_time, logout_time, login_start, login_end, logout_sta
     if logout_start is not None and logout_end is not None:
         if logout_start <= logout_time <= logout_end:
             return login_status
-        return 'Absent'
+        else:
+            return 'Absent'
 
     return login_status
+
+
+def get_settings():
+    """Fetch current time window settings from database."""
+    if USE_MYSQL:
+        conn = get_conn()
+        cur = conn.cursor(dictionary=True)
+        cur.execute('SELECT * FROM settings WHERE id = 1')
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            return {
+                'morning_login_start': '07:00',
+                'morning_login_end': '07:50',
+                'morning_logout_start': '11:00',
+                'morning_logout_end': '12:00',
+                'afternoon_login_start': '13:00',
+                'afternoon_login_end': '13:50',
+                'afternoon_logout_start': '17:00',
+                'afternoon_logout_end': '18:00',
+            }
+        return {k: str(v) for k, v in row.items()}
+    else:
+        with get_conn_sqlite() as conn:
+            cur = conn.execute('SELECT * FROM settings WHERE id = 1')
+            row = cur.fetchone()
+            if not row:
+                return {
+                    'morning_login_start': '07:00',
+                    'morning_login_end': '07:50',
+                    'morning_logout_start': '11:00',
+                    'morning_logout_end': '12:00',
+                    'afternoon_login_start': '13:00',
+                    'afternoon_login_end': '13:50',
+                    'afternoon_logout_start': '17:00',
+                    'afternoon_logout_end': '18:00',
+                }
+            return dict(row)
+
 
 DB_PATH = Path(__file__).parent / 'attendance.db'
 
 SCHEMA = '''
+CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    morning_login_start TEXT DEFAULT '07:00',
+    morning_login_end TEXT DEFAULT '07:50',
+    morning_logout_start TEXT DEFAULT '11:00',
+    morning_logout_end TEXT DEFAULT '12:00',
+    afternoon_login_start TEXT DEFAULT '13:00',
+    afternoon_login_end TEXT DEFAULT '13:50',
+    afternoon_logout_start TEXT DEFAULT '17:00',
+    afternoon_logout_end TEXT DEFAULT '18:00'
+);
+
 CREATE TABLE IF NOT EXISTS attendance (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   student_name TEXT NOT NULL,
   student_id TEXT NOT NULL,
   attendance_date TEXT NOT NULL,
-  time_in TEXT,
-  time_out TEXT,
-  login_start TEXT,
-  login_end TEXT,
-  logout_start TEXT,
-  logout_end TEXT,
-  status TEXT NOT NULL
+  morning_time_in TEXT,
+  morning_time_out TEXT,
+  morning_status TEXT DEFAULT 'Absent',
+  afternoon_time_in TEXT,
+  afternoon_time_out TEXT,
+  afternoon_status TEXT DEFAULT 'Absent'
 );
 '''
 
@@ -99,9 +156,13 @@ def get_conn():
 def ensure_sqlite_columns():
     with get_conn_sqlite() as conn:
         columns = [row[1] for row in conn.execute("PRAGMA table_info(attendance)")]
-        for col_name in ['login_start', 'login_end', 'logout_start', 'logout_end']:
+        needed = ['morning_time_in', 'morning_time_out', 'morning_status', 'afternoon_time_in', 'afternoon_time_out', 'afternoon_status']
+        for col_name in needed:
             if col_name not in columns:
-                conn.execute(f'ALTER TABLE attendance ADD COLUMN {col_name} TEXT')
+                if 'morning_status' in col_name or 'afternoon_status' in col_name:
+                    conn.execute(f"ALTER TABLE attendance ADD COLUMN {col_name} TEXT DEFAULT 'Absent'")
+                else:
+                    conn.execute(f'ALTER TABLE attendance ADD COLUMN {col_name} TEXT')
         conn.commit()
 
 
@@ -110,20 +171,33 @@ def init_db():
         conn = get_conn()
         cur = conn.cursor()
         cur.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+          id INT PRIMARY KEY DEFAULT 1,
+          morning_login_start TIME DEFAULT '07:00:00',
+          morning_login_end TIME DEFAULT '07:50:00',
+          morning_logout_start TIME DEFAULT '11:00:00',
+          morning_logout_end TIME DEFAULT '12:00:00',
+          afternoon_login_start TIME DEFAULT '13:00:00',
+          afternoon_login_end TIME DEFAULT '13:50:00',
+          afternoon_logout_start TIME DEFAULT '17:00:00',
+          afternoon_logout_end TIME DEFAULT '18:00:00'
+        )
+        ''')
+        cur.execute('''
         CREATE TABLE IF NOT EXISTS attendance (
           id INT AUTO_INCREMENT PRIMARY KEY,
           student_name VARCHAR(255) NOT NULL,
           student_id VARCHAR(255) NOT NULL,
           attendance_date DATE NOT NULL,
-          time_in TIME,
-          time_out TIME,
-          login_start TIME,
-          login_end TIME,
-          logout_start TIME,
-          logout_end TIME,
-          status VARCHAR(50) NOT NULL
+          morning_time_in TIME,
+          morning_time_out TIME,
+          morning_status VARCHAR(50) DEFAULT 'Absent',
+          afternoon_time_in TIME,
+          afternoon_time_out TIME,
+          afternoon_status VARCHAR(50) DEFAULT 'Absent'
         )
         ''')
+        cur.execute('INSERT IGNORE INTO settings (id) VALUES (1)')
         cur.close()
         conn.close()
     else:
@@ -141,13 +215,12 @@ def normalize_record(row):
         'studentName': row.get('student_name'),
         'studentId': row.get('student_id'),
         'date': row.get('attendance_date'),
-        'timeIn': row.get('time_in'),
-        'timeOut': row.get('time_out'),
-        'loginStart': row.get('login_start'),
-        'loginEnd': row.get('login_end'),
-        'logoutStart': row.get('logout_start'),
-        'logoutEnd': row.get('logout_end'),
-        'status': row.get('status'),
+        'morningTimeIn': row.get('morning_time_in'),
+        'morningTimeOut': row.get('morning_time_out'),
+        'morningStatus': row.get('morning_status'),
+        'afternoonTimeIn': row.get('afternoon_time_in'),
+        'afternoonTimeOut': row.get('afternoon_time_out'),
+        'afternoonStatus': row.get('afternoon_status'),
     }
 
 
@@ -216,24 +289,27 @@ def create_attendance():
     name = data.get('studentName', '').strip()
     sid = data.get('studentId', '').strip()
     date_text = data.get('date') or str(date.today())
-    time_in = data.get('timeIn') or None
-    time_out = data.get('timeOut') or None
-    login_start = data.get('loginStart') or None
-    login_end = data.get('loginEnd') or None
-    logout_start = data.get('logoutStart') or None
-    logout_end = data.get('logoutEnd') or None
-    status = determine_status(time_in, time_out, login_start, login_end, logout_start, logout_end)
-
+    
+    morning_time_in = data.get('morningTimeIn') or None
+    morning_time_out = data.get('morningTimeOut') or None
+    afternoon_time_in = data.get('afternoonTimeIn') or None
+    afternoon_time_out = data.get('afternoonTimeOut') or None
+    
     if not name or not sid:
         return jsonify({'ok': False, 'error': 'studentName and studentId required'}), 400
+    
+    settings = get_settings()
+    morning_status = determine_status(morning_time_in, morning_time_out, settings['morning_login_start'], settings['morning_login_end'], settings['morning_logout_start'], settings['morning_logout_end'])
+    afternoon_status = determine_status(afternoon_time_in, afternoon_time_out, settings['afternoon_login_start'], settings['afternoon_login_end'], settings['afternoon_logout_start'], settings['afternoon_logout_end'])
 
     if USE_MYSQL:
-        last = execute('INSERT INTO attendance (student_name, student_id, attendance_date, time_in, time_out, login_start, login_end, logout_start, logout_end, status) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                       (name, sid, date_text, time_in, time_out, login_start, login_end, logout_start, logout_end, status))
+        last = execute('INSERT INTO attendance (student_name, student_id, attendance_date, morning_time_in, morning_time_out, morning_status, afternoon_time_in, afternoon_time_out, afternoon_status) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                       (name, sid, date_text, morning_time_in, morning_time_out, morning_status, afternoon_time_in, afternoon_time_out, afternoon_status))
     else:
-        last = execute('INSERT INTO attendance (student_name, student_id, attendance_date, time_in, time_out, login_start, login_end, logout_start, logout_end, status) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                       (name, sid, date_text, time_in, time_out, login_start, login_end, logout_start, logout_end, status))
-    return jsonify({'ok': True, 'id': last, 'status': status})
+        last = execute('INSERT INTO attendance (student_name, student_id, attendance_date, morning_time_in, morning_time_out, morning_status, afternoon_time_in, afternoon_time_out, afternoon_status) VALUES (?,?,?,?,?,?,?,?,?)',
+                       (name, sid, date_text, morning_time_in, morning_time_out, morning_status, afternoon_time_in, afternoon_time_out, afternoon_status))
+    return jsonify({'ok': True, 'id': last, 'morning_status': morning_status, 'afternoon_status': afternoon_status})
+
 
 
 @app.route('/api/attendances/<int:item_id>', methods=['PUT'])
@@ -242,34 +318,37 @@ def update_attendance(item_id):
     name = data.get('studentName', '').strip()
     sid = data.get('studentId', '').strip()
     date_text = data.get('date') or str(date.today())
-    time_in = data.get('timeIn') or None
-    time_out = data.get('timeOut') or None
-    login_start = data.get('loginStart') or None
-    login_end = data.get('loginEnd') or None
-    logout_start = data.get('logoutStart') or None
-    logout_end = data.get('logoutEnd') or None
-    status = determine_status(time_in, time_out, login_start, login_end, logout_start, logout_end)
+    
+    morning_time_in = data.get('morningTimeIn') or None
+    morning_time_out = data.get('morningTimeOut') or None
+    afternoon_time_in = data.get('afternoonTimeIn') or None
+    afternoon_time_out = data.get('afternoonTimeOut') or None
 
     if not name or not sid:
         return jsonify({'ok': False, 'error': 'studentName and studentId required'}), 400
 
+    settings = get_settings()
+    morning_status = determine_status(morning_time_in, morning_time_out, settings['morning_login_start'], settings['morning_login_end'], settings['morning_logout_start'], settings['morning_logout_end'])
+    afternoon_status = determine_status(afternoon_time_in, afternoon_time_out, settings['afternoon_login_start'], settings['afternoon_login_end'], settings['afternoon_logout_start'], settings['afternoon_logout_end'])
+
     if USE_MYSQL:
         conn = get_conn()
         cur = conn.cursor()
-        cur.execute('UPDATE attendance SET student_name=%s, student_id=%s, attendance_date=%s, time_in=%s, time_out=%s, login_start=%s, login_end=%s, logout_start=%s, logout_end=%s, status=%s WHERE id=%s',
-                    (name, sid, date_text, time_in, time_out, login_start, login_end, logout_start, logout_end, status, item_id))
+        cur.execute('UPDATE attendance SET student_name=%s, student_id=%s, attendance_date=%s, morning_time_in=%s, morning_time_out=%s, morning_status=%s, afternoon_time_in=%s, afternoon_time_out=%s, afternoon_status=%s WHERE id=%s',
+                    (name, sid, date_text, morning_time_in, morning_time_out, morning_status, afternoon_time_in, afternoon_time_out, afternoon_status, item_id))
         ok = cur.rowcount > 0
         cur.close()
         conn.close()
     else:
         conn = get_conn()
-        cur = conn.execute('UPDATE attendance SET student_name=?, student_id=?, attendance_date=?, time_in=?, time_out=?, login_start=?, login_end=?, logout_start=?, logout_end=?, status=? WHERE id=?',
-                           (name, sid, date_text, time_in, time_out, login_start, login_end, logout_start, logout_end, status, item_id))
+        cur = conn.execute('UPDATE attendance SET student_name=?, student_id=?, attendance_date=?, morning_time_in=?, morning_time_out=?, morning_status=?, afternoon_time_in=?, afternoon_time_out=?, afternoon_status=? WHERE id=?',
+                           (name, sid, date_text, morning_time_in, morning_time_out, morning_status, afternoon_time_in, afternoon_time_out, afternoon_status, item_id))
         ok = cur.rowcount > 0
         conn.commit()
         conn.close()
 
-    return jsonify({'ok': ok, 'status': status})
+    return jsonify({'ok': ok, 'morning_status': morning_status, 'afternoon_status': afternoon_status})
+
 
 
 @app.route('/api/attendances/<int:item_id>', methods=['DELETE'])
@@ -285,6 +364,49 @@ def delete_attendance(item_id):
         with get_conn() as conn:
             cur = conn.execute('DELETE FROM attendance WHERE id=?', (item_id,))
             ok = cur.rowcount > 0
+    return jsonify({'ok': ok})
+
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings_endpoint():
+    return jsonify(get_settings())
+
+
+@app.route('/api/settings', methods=['PUT'])
+def update_settings():
+    data = request.get_json() or {}
+    
+    if USE_MYSQL:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute('''UPDATE settings SET 
+            morning_login_start=%s, morning_login_end=%s, 
+            morning_logout_start=%s, morning_logout_end=%s,
+            afternoon_login_start=%s, afternoon_login_end=%s,
+            afternoon_logout_start=%s, afternoon_logout_end=%s
+            WHERE id=1''',
+            (data.get('morning_login_start'), data.get('morning_login_end'),
+             data.get('morning_logout_start'), data.get('morning_logout_end'),
+             data.get('afternoon_login_start'), data.get('afternoon_login_end'),
+             data.get('afternoon_logout_start'), data.get('afternoon_logout_end')))
+        ok = cur.rowcount > 0
+        cur.close()
+        conn.close()
+    else:
+        with get_conn() as conn:
+            cur = conn.execute('''UPDATE settings SET 
+                morning_login_start=?, morning_login_end=?, 
+                morning_logout_start=?, morning_logout_end=?,
+                afternoon_login_start=?, afternoon_login_end=?,
+                afternoon_logout_start=?, afternoon_logout_end=?
+                WHERE id=1''',
+                (data.get('morning_login_start'), data.get('morning_login_end'),
+                 data.get('morning_logout_start'), data.get('morning_logout_end'),
+                 data.get('afternoon_login_start'), data.get('afternoon_login_end'),
+                 data.get('afternoon_logout_start'), data.get('afternoon_logout_end')))
+            ok = cur.rowcount > 0
+            conn.commit()
+    
     return jsonify({'ok': ok})
 
 
