@@ -69,6 +69,20 @@ def init_db():
             conn.executescript(SCHEMA)
 
 
+def normalize_record(row):
+    if not row:
+        return row
+    return {
+        'id': row.get('id'),
+        'studentName': row.get('student_name'),
+        'studentId': row.get('student_id'),
+        'date': row.get('attendance_date'),
+        'timeIn': row.get('time_in'),
+        'timeOut': row.get('time_out'),
+        'status': row.get('status'),
+    }
+
+
 def query_all(sql, params=()):
     if USE_MYSQL:
         conn = get_conn()
@@ -119,13 +133,13 @@ def index():
 @app.route('/api/attendances', methods=['GET'])
 def list_attendances():
     rows = query_all('SELECT * FROM attendance ORDER BY attendance_date DESC, id DESC')
-    return jsonify(rows)
+    return jsonify([normalize_record(row) for row in rows])
 
 
 @app.route('/api/attendances/<int:item_id>', methods=['GET'])
 def get_attendance(item_id):
-    r = query_one('SELECT * FROM attendance WHERE id=%s' if USE_MYSQL else 'SELECT * FROM attendance WHERE id=?', (item_id,))
-    return (jsonify(r) if r else ('', 404))
+    row = query_one('SELECT * FROM attendance WHERE id=%s' if USE_MYSQL else 'SELECT * FROM attendance WHERE id=?', (item_id,))
+    return (jsonify(normalize_record(row)) if row else ('', 404))
 
 
 @app.route('/api/attendances', methods=['POST'])
@@ -201,3 +215,5 @@ def delete_attendance(item_id):
 if __name__ == '__main__':
     init_db()
     app.run(host='0.0.0.0', port=8080, debug=True)
+else:
+    init_db()
