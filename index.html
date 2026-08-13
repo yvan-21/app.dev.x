@@ -54,8 +54,6 @@
           <th>Date</th>
           <th>Log In</th>
           <th>Log Out</th>
-          <th>Login Window</th>
-          <th>Logout Window</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
@@ -90,8 +88,6 @@
           <td>${r.date}</td>
           <td>${r.timeIn || '-'}</td>
           <td>${r.timeOut || '-'}</td>
-          <td>${r.loginStart && r.loginEnd ? `${r.loginStart} - ${r.loginEnd}` : '-'}</td>
-          <td>${r.logoutStart && r.logoutEnd ? `${r.logoutStart} - ${r.logoutEnd}` : '-'}</td>
           <td>${r.status}</td>
           <td>
             <div class="row-actions">
