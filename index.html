@@ -27,8 +27,12 @@
       <input name="studentName" id="studentName" placeholder="Student Name" required />
       <input name="studentId" id="studentId" placeholder="Student ID" required />
       <input name="date" id="date" type="date" required />
-      <input name="timeIn" id="timeIn" type="time" />
-      <input name="timeOut" id="timeOut" type="time" />
+      <input name="timeIn" id="timeIn" type="time" aria-label="Log In Time" title="Log In Time" />
+      <input name="timeOut" id="timeOut" type="time" aria-label="Log Out Time" title="Log Out Time" />
+      <input name="loginStart" id="loginStart" type="time" aria-label="Log In Window Start" title="Log In Window Start" placeholder="07:00" />
+      <input name="loginEnd" id="loginEnd" type="time" aria-label="Log In Window End" title="Log In Window End" placeholder="07:50" />
+      <input name="logoutStart" id="logoutStart" type="time" aria-label="Log Out Window Start" title="Log Out Window Start" placeholder="11:00" />
+      <input name="logoutEnd" id="logoutEnd" type="time" aria-label="Log Out Window End" title="Log Out Window End" placeholder="12:00" />
       <select name="status" id="status">
         <option>Present</option>
         <option>Late</option>
@@ -48,8 +52,10 @@
           <th>Name</th>
           <th>Student ID</th>
           <th>Date</th>
-          <th>In</th>
-          <th>Out</th>
+          <th>Log In</th>
+          <th>Log Out</th>
+          <th>Login Window</th>
+          <th>Logout Window</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
@@ -84,6 +90,8 @@
           <td>${r.date}</td>
           <td>${r.timeIn || '-'}</td>
           <td>${r.timeOut || '-'}</td>
+          <td>${r.loginStart && r.loginEnd ? `${r.loginStart} - ${r.loginEnd}` : '-'}</td>
+          <td>${r.logoutStart && r.logoutEnd ? `${r.logoutStart} - ${r.logoutEnd}` : '-'}</td>
           <td>${r.status}</td>
           <td>
             <div class="row-actions">
@@ -115,6 +123,10 @@
           document.getElementById('date').value = item.date || new Date().toISOString().slice(0, 10);
           document.getElementById('timeIn').value = item.timeIn || '';
           document.getElementById('timeOut').value = item.timeOut || '';
+          document.getElementById('loginStart').value = item.loginStart || '';
+          document.getElementById('loginEnd').value = item.loginEnd || '';
+          document.getElementById('logoutStart').value = item.logoutStart || '';
+          document.getElementById('logoutEnd').value = item.logoutEnd || '';
           document.getElementById('status').value = item.status || 'Present';
           submitBtn.textContent = 'Update Record';
           cancelBtn.classList.remove('hidden');
@@ -139,6 +151,10 @@
         date: document.getElementById('date').value,
         timeIn: document.getElementById('timeIn').value,
         timeOut: document.getElementById('timeOut').value,
+        loginStart: document.getElementById('loginStart').value,
+        loginEnd: document.getElementById('loginEnd').value,
+        logoutStart: document.getElementById('logoutStart').value,
+        logoutEnd: document.getElementById('logoutEnd').value,
         status: document.getElementById('status').value,
       };
 
