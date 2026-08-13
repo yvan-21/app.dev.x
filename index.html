@@ -2,41 +2,162 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Attendance App</title>
+  <title>Attendance CRUD</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      background: #f3f4f6;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      color: #111827;
-    }
-    .card {
-      background: #ffffff;
-      border-radius: 16px;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-      padding: 40px 50px;
-      text-align: center;
-      max-width: 600px;
-    }
-    h1 {
-      margin: 0 0 16px;
-      font-size: 2.2rem;
-    }
-    p {
-      margin: 0;
-      font-size: 1.1rem;
-      line-height: 1.6;
-    }
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f8fb; color: #1f2937; }
+    h1, h2 { margin-bottom: 12px; }
+    .panel { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+    form { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    input, select, button { padding: 10px; border-radius: 8px; border: 1px solid #d1d5db; font-size: 14px; }
+    button { cursor: pointer; background: #2563eb; color: white; border: none; }
+    button.secondary { background: #4b5563; }
+    button.danger { background: #dc2626; }
+    table { width: 100%; border-collapse: collapse; background: white; }
+    th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; }
+    th { background: #eef2ff; }
+    .row-actions { display: flex; gap: 8px; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Attendance</h1>
-    <p>Attendance functionality is currently unavailable.</p>
+  <div class="panel">
+    <h1>Attendance CRUD</h1>
+    <form id="form">
+      <input type="hidden" name="id" id="recordId" />
+      <input name="studentName" id="studentName" placeholder="Student Name" required />
+      <input name="studentId" id="studentId" placeholder="Student ID" required />
+      <input name="date" id="date" type="date" required />
+      <input name="timeIn" id="timeIn" type="time" />
+      <input name="timeOut" id="timeOut" type="time" />
+      <select name="status" id="status">
+        <option>Present</option>
+        <option>Late</option>
+        <option>Absent</option>
+      </select>
+      <button id="submitBtn" type="submit">Create Record</button>
+      <button id="cancelBtn" type="button" class="secondary hidden">Cancel</button>
+    </form>
   </div>
+
+  <div class="panel">
+    <h2>Saved Records</h2>
+    <table id="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Student ID</th>
+          <th>Date</th>
+          <th>In</th>
+          <th>Out</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const submitBtn = document.getElementById('submitBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const recordId = document.getElementById('recordId');
+
+    async function loadRecords() {
+      const res = await fetch('/api/attendances');
+      const list = await res.json();
+      const tbody = document.querySelector('#table tbody');
+      tbody.innerHTML = '';
+
+      if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="8">No records found.</td></tr>';
+        return;
+      }
+
+      list.forEach((r) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.id}</td>
+          <td>${r.studentName}</td>
+          <td>${r.studentId}</td>
+          <td>${r.date}</td>
+          <td>${r.timeIn || '-'}</td>
+          <td>${r.timeOut || '-'}</td>
+          <td>${r.status}</td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="secondary edit" data-id="${r.id}">Edit</button>
+              <button type="button" class="danger delete" data-id="${r.id}">Delete</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.querySelectorAll('.delete').forEach((button) => {
+        button.onclick = async () => {
+          const id = button.dataset.id;
+          await fetch(`/api/attendances/${id}`, { method: 'DELETE' });
+          resetForm();
+          loadRecords();
+        };
+      });
+
+      document.querySelectorAll('.edit').forEach((button) => {
+        button.onclick = async () => {
+          const id = button.dataset.id;
+          const res = await fetch(`/api/attendances/${id}`);
+          const item = await res.json();
+          recordId.value = item.id;
+          document.getElementById('studentName').value = item.studentName || '';
+          document.getElementById('studentId').value = item.studentId || '';
+          document.getElementById('date').value = item.date || new Date().toISOString().slice(0, 10);
+          document.getElementById('timeIn').value = item.timeIn || '';
+          document.getElementById('timeOut').value = item.timeOut || '';
+          document.getElementById('status').value = item.status || 'Present';
+          submitBtn.textContent = 'Update Record';
+          cancelBtn.classList.remove('hidden');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+      });
+    }
+
+    function resetForm() {
+      form.reset();
+      recordId.value = '';
+      submitBtn.textContent = 'Create Record';
+      cancelBtn.classList.add('hidden');
+      document.getElementById('date').value = new Date().toISOString().slice(0, 10);
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const payload = {
+        studentName: document.getElementById('studentName').value.trim(),
+        studentId: document.getElementById('studentId').value.trim(),
+        date: document.getElementById('date').value,
+        timeIn: document.getElementById('timeIn').value,
+        timeOut: document.getElementById('timeOut').value,
+        status: document.getElementById('status').value,
+      };
+
+      const method = recordId.value ? 'PUT' : 'POST';
+      const url = recordId.value ? `/api/attendances/${recordId.value}` : '/api/attendances';
+
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      resetForm();
+      loadRecords();
+    });
+
+    cancelBtn.addEventListener('click', resetForm);
+    document.getElementById('date').value = new Date().toISOString().slice(0, 10);
+    loadRecords();
+  </script>
 </body>
 </html>
